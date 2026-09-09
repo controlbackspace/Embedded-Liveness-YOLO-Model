@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 2
+names: ['mask', 'no-mask']
+
+roboflow:
+  workspace: vinjireh-caasi
+  project: mask-wearing-qktmu
+  version: 1
+  license: Public Domain
+  url: https://universe.roboflow.com/vinjireh-caasi/mask-wearing-qktmu/dataset/1
