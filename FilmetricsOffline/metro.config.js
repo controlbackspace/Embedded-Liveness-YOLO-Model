@@ -1,4 +1,5 @@
-const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
+const { getDefaultConfig } = require('expo/metro-config');
+const { mergeConfig } = require('@react-native/metro-config');
 
 /**
  * Metro configuration
@@ -6,10 +7,13 @@ const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
  *
  * @type {import('metro-config').MetroConfig}
  */
+const defaultConfig = getDefaultConfig(__dirname);
+
 const config = {
   resolver: {
-    assetExts: ['onnx', 'pt', 'bin', 'tflite'],
+    // extend defaults (png/jpg/ttf/...) — don't replace, or bundle 500s
+    assetExts: [...defaultConfig.resolver.assetExts, 'onnx', 'pt', 'bin', 'tflite'],
   },
 };
 
-module.exports = mergeConfig(getDefaultConfig(__dirname), config);
+module.exports = mergeConfig(defaultConfig, config);

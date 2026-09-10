@@ -42,15 +42,26 @@ function iou(a: { x1: number; y1: number; x2: number; y2: number }, b: { x1: num
 async function ensureModelFile(): Promise<string> {
   const dest = `${RNFS.DocumentDirectoryPath}/${MODEL_NAME}`
   const exists = await RNFS.exists(dest)
-  if (exists) return dest
+  if (exists) {
+    const stat = await RNFS.stat(dest)
+    console.log(`[ORT] model exists: ${dest} size=${stat.size}`)
+    if (Number(stat.size) > 1024 * 1024) return dest
+    console.log('[ORT] model file too small, re-copying...')
+    await RNFS.unlink(dest).catch(() => {})
+  }
   // Android: copy from native assets (android/app/src/main/assets/)
   try {
+    console.log('[ORT] copying model from native assets...')
     await RNFS.copyFileAssets(MODEL_NAME, dest)
+    const stat = await RNFS.stat(dest)
+    console.log(`[ORT] copied size=${stat.size}`)
     return dest
   } catch (e) {
+    console.log('[ORT] copyFileAssets failed, trying Metro download fallback', e)
     // Fallback dev: download bundled asset via Metro server
     const asset = Image.resolveAssetSource(MODEL_ASSET)
     if (!asset?.uri) throw new Error('Cannot resolve model asset')
+    console.log('[ORT] downloading from', asset.uri)
     const dl = RNFS.downloadFile({ fromUrl: asset.uri, toFile: dest })
     const res = await dl.promise
     if (res.statusCode !== 200) throw new Error(`Model download HTTP ${res.statusCode}`)
@@ -166,8 +177,11 @@ class YoloBridge {
   async initModel(): Promise<boolean> {
     try {
       const path = await ensureModelFile()
-      session = await InferenceSession.create(path)
+      console.log('[ORT] creating session from', path)
+      // NOTE: this ORT build needs file:// scheme (bare path throws "No content provider")
+      session = await InferenceSession.create(`file://${path}`)
       initialized = true
+      console.log('[ORT] session ready, inputs=', session.inputNames)
       return true
     } catch (error) {
       console.error('JS ORT init failed:', error)

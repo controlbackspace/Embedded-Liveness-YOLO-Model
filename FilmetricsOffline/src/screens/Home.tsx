@@ -14,6 +14,7 @@ export default function Home() {
   const [isInitialized, setIsInitialized] = useState(false)
   const [isActive, setIsActive] = useState(true)
   const [scanning, setScanning] = useState(true)
+  const [facing, setFacing] = useState<'front' | 'back'>('front')
   const [error, setError] = useState<string | null>(null)
   const cameraRef = useRef<CameraViewHandle>(null)
   const busyRef = useRef(false)
@@ -25,9 +26,10 @@ export default function Home() {
     }
   }, [])
 
-  // Offline loop: takePhoto -> {uri} -> YoloModule (NNAPI, fully on-device)
+  // Offline loop: takePhoto -> {uri} -> ORT JS (fully on-device)
   useEffect(() => {
     if (!isInitialized || !scanning) return
+    setDetections([]) // clear stale boxes on camera switch
     const timer = setInterval(async () => {
       if (busyRef.current || !cameraRef.current) return
       busyRef.current = true
@@ -36,15 +38,18 @@ export default function Home() {
         const uri = photo.path.startsWith('file://') ? photo.path : `file://${photo.path}`
         const results = await detector.detect({ uri })
         setDetections(results)
-        setError(null)
+        // keep last error visible for diagnosis (clears only on real detection)
+        if (results.length > 0) setError(null)
       } catch (e: any) {
-        setError(e?.message ?? 'offline inference failed')
+        const msg = e?.message ?? 'offline inference failed'
+        console.error('[SCAN] failed:', msg, e)
+        setError(msg)
       } finally {
         busyRef.current = false
       }
     }, OFFLINE_INTERVAL_MS)
     return () => clearInterval(timer)
-  }, [isInitialized, scanning])
+  }, [isInitialized, scanning, facing])
 
   const initializeDetector = async () => {
     try {
@@ -97,7 +102,7 @@ export default function Home() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
       <View style={styles.cameraContainer}>
-        <CameraView ref={cameraRef} isActive={isActive} />
+        <CameraView ref={cameraRef} isActive={isActive} facing={facing} />
         <FaceOverlay detections={detections} videoWidth={VIDEO_WIDTH} videoHeight={VIDEO_HEIGHT} />
       </View>
       <View style={styles.statusContainer}>
@@ -112,6 +117,9 @@ export default function Home() {
         )}
         <TouchableOpacity style={styles.btn} onPress={() => setScanning((v) => !v)}>
           <Text style={styles.btnText}>{scanning ? 'Pause scan' : 'Resume scan'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.btn} onPress={() => setFacing((f) => (f === 'front' ? 'back' : 'front'))}>
+          <Text style={styles.btnText}>Flip to {facing === 'front' ? 'back' : 'front'}</Text>
         </TouchableOpacity>
       </View>
     </View>
