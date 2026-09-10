@@ -13,8 +13,8 @@ export default function Home() {
   const [detections, setDetections] = useState<FaceDetection[]>([])
   const [isInitialized, setIsInitialized] = useState(false)
   const [isActive, setIsActive] = useState(true)
-  const [scanning, setScanning] = useState(true)
   const [facing, setFacing] = useState<'front' | 'back'>('front')
+  const [scanning, setScanning] = useState(false) // single-shot busy flag
   const [error, setError] = useState<string | null>(null)
   const cameraRef = useRef<CameraViewHandle>(null)
   const busyRef = useRef(false)
@@ -26,30 +26,27 @@ export default function Home() {
     }
   }, [])
 
-  // Offline loop: takePhoto -> {uri} -> ORT JS (fully on-device)
-  useEffect(() => {
-    if (!isInitialized || !scanning) return
-    setDetections([]) // clear stale boxes on camera switch
-    const timer = setInterval(async () => {
-      if (busyRef.current || !cameraRef.current) return
-      busyRef.current = true
-      try {
-        const photo = await cameraRef.current.takePhoto()
-        const uri = photo.path.startsWith('file://') ? photo.path : `file://${photo.path}`
-        const results = await detector.detect({ uri })
-        setDetections(results)
-        // keep last error visible for diagnosis (clears only on real detection)
-        if (results.length > 0) setError(null)
-      } catch (e: any) {
-        const msg = e?.message ?? 'offline inference failed'
-        console.error('[SCAN] failed:', msg, e)
-        setError(msg)
-      } finally {
-        busyRef.current = false
-      }
-    }, OFFLINE_INTERVAL_MS)
-    return () => clearInterval(timer)
-  }, [isInitialized, scanning, facing])
+  // Tap-to-scan: one photo -> on-device ORT -> overlay. No continuous loop.
+  const scanOnce = async () => {
+    if (busyRef.current || !cameraRef.current || scanning) return
+    setScanning(true)
+    busyRef.current = true
+    try {
+      const photo = await cameraRef.current.takePhoto()
+      const uri = photo.path.startsWith('file://') ? photo.path : `file://${photo.path}`
+      console.log(`[SCAN] photo file: ${uri}`)
+      const results = await detector.detect({ uri, mirror: facing === 'front' })
+      setDetections(results)
+      if (results.length > 0) setError(null)
+    } catch (e: any) {
+      const msg = e?.message ?? 'offline inference failed'
+      console.error('[SCAN] failed:', msg, e)
+      setError(msg)
+    } finally {
+      busyRef.current = false
+      setScanning(false)
+    }
+  }
 
   const initializeDetector = async () => {
     try {
@@ -115,10 +112,22 @@ export default function Home() {
             {detections.length} face{detections.length !== 1 ? 's' : ''} detected
           </Text>
         )}
-        <TouchableOpacity style={styles.btn} onPress={() => setScanning((v) => !v)}>
-          <Text style={styles.btnText}>{scanning ? 'Pause scan' : 'Resume scan'}</Text>
+        <TouchableOpacity
+          style={[styles.btn, styles.scanBtn, (!isInitialized || scanning) && styles.btnDisabled]}
+          onPress={scanOnce}
+          disabled={!isInitialized || scanning}
+        >
+          <Text style={styles.btnText}>
+            {!isInitialized ? 'Loading model…' : scanning ? 'Scanning…' : '📷 TAP TO SCAN'}
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.btn} onPress={() => setFacing((f) => (f === 'front' ? 'back' : 'front'))}>
+        <TouchableOpacity
+          style={styles.btn}
+          onPress={() => {
+            setDetections([])
+            setFacing((f) => (f === 'front' ? 'back' : 'front'))
+          }}
+        >
           <Text style={styles.btnText}>Flip to {facing === 'front' ? 'back' : 'front'}</Text>
         </TouchableOpacity>
       </View>
@@ -135,5 +144,7 @@ const styles = StyleSheet.create({
   detectionCount: { color: '#9ca3af', fontSize: 14 },
   error: { color: '#ef4444', fontSize: 12, marginBottom: 8 },
   btn: { marginTop: 10, backgroundColor: '#1f2937', padding: 10, borderRadius: 8 },
+  scanBtn: { backgroundColor: '#065f46', paddingHorizontal: 32, paddingVertical: 14 },
+  btnDisabled: { opacity: 0.5 },
   btnText: { color: '#fff', fontWeight: 'bold' },
 })
