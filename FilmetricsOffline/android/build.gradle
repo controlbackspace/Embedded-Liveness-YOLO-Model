@@ -26,5 +26,9 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // expo-camera bundles a custom com.google.android:cameraview
+        maven {
+            url "$rootDir/../node_modules/expo-camera/android/maven"
+        }
     }
 }
